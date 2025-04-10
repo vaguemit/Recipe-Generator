@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Recipe, recipeSchema } from "@/lib/types";
 
-// Fetch a real image from Unsplash API based on search term
+// Improved function to fetch a recipe image from Unsplash API with better error handling
 async function fetchRecipeImage(searchTerm: string): Promise<string> {
   try {
-    // Default fallback images from placeholder services in case API fails
+    // Default fallback images from Unsplash in case the API fails
     const fallbackImages = [
       "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&h=600&fit=crop",
       "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=800&h=600&fit=crop",
@@ -18,59 +18,110 @@ async function fetchRecipeImage(searchTerm: string): Promise<string> {
       "https://images.unsplash.com/photo-1473093295043-cdd812d0e601?w=800&h=600&fit=crop"
     ];
     
-    // Use Unsplash Source API (no API key required for basic usage)
-    // Format: https://source.unsplash.com/featured/?[search-term]
-    const sanitizedTerm = searchTerm.toLowerCase().replace(/[^a-z0-9]/g, ',');
+    // Sanitize the search term
+    const sanitizedTerm = (searchTerm || "food").toLowerCase().replace(/[^a-z0-9]/g, ',');
     const imageUrl = `https://source.unsplash.com/featured/?food,${sanitizedTerm},recipe`;
     
-    // Make a request to get the redirected URL
-    const response = await fetch(imageUrl, { method: 'GET' });
+    // Make a request with a timeout of 3 seconds
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
     
-    if (response.ok) {
-      return response.url;
-    } else {
-      // If API fails, return a random fallback image
-      return fallbackImages[Math.floor(Math.random() * fallbackImages.length)];
+    try {
+      const response = await fetch(imageUrl, { 
+        method: 'GET',
+        signal: controller.signal 
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (response.ok) {
+        return response.url;
+      }
+    } catch (fetchError) {
+      console.log("Image fetch timed out or failed:", fetchError);
+      // Continue to fallback
     }
+    
+    // Return a random fallback image if fetch fails or times out
+    return fallbackImages[Math.floor(Math.random() * fallbackImages.length)];
   } catch (error) {
     console.error("Error fetching recipe image:", error);
-    // Return a placeholder if fetching fails
-    return "https://placehold.co/800x600/orange/white?text=Recipe+Image";
+    // Return the first fallback image if all else fails
+    return "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&h=600&fit=crop";
   }
 }
 
-// Create a mock recipe in case the API fails
+// Create a varied mock recipe based on user input for better fallback experience
 function createMockRecipe(userInput: string): Recipe {
+  // Extract relevant terms from user input for better personalization
+  const inputLower = userInput.toLowerCase();
+  const isMeatDish = inputLower.includes("chicken") || inputLower.includes("beef") || 
+                      inputLower.includes("pork") || inputLower.includes("meat");
+  const isVegetarian = inputLower.includes("vegetarian") || inputLower.includes("veggie");
+  const isVegan = inputLower.includes("vegan");
+  const isHealthy = inputLower.includes("healthy") || inputLower.includes("low calorie");
+  const isQuick = inputLower.includes("quick") || inputLower.includes("easy") || 
+                  inputLower.includes("fast") || inputLower.includes("simple");
+  
+  // Generate recipe name based on input
+  let recipeName = `${userInput.charAt(0).toUpperCase() + userInput.slice(1).split(' ').slice(0, 3).join(' ')} Recipe`;
+  
+  // Generate tags based on input
+  const tags = [];
+  if (isQuick) tags.push("Quick");
+  if (isVegan) tags.push("Vegan");
+  else if (isVegetarian) tags.push("Vegetarian");
+  if (isHealthy) tags.push("Healthy");
+  if (isMeatDish) tags.push("Protein-Rich");
+  
+  // Add some default tags if none were added
+  if (tags.length === 0) {
+    tags.push("Homestyle", "Classic");
+  }
+  tags.push("30-Minute Recipe");
+  
+  // Generate cooking time
+  const cookingTime = isQuick ? "20 minutes" : "40 minutes";
+  
+  // Generate difficulty
+  const difficulty = isQuick ? "Easy" : "Medium";
+  
   return {
-    name: `${userInput.charAt(0).toUpperCase() + userInput.slice(1).split(' ').slice(0, 3).join(' ')} Recipe`,
-    tags: ["Quick", "Easy", "Everyday"],
-    cookingTime: "30 minutes",
-    difficulty: "Easy",
+    name: recipeName,
+    tags,
+    cookingTime,
+    difficulty,
     servings: 4,
     ingredients: [
       "2 cups of main ingredient",
       "1 tablespoon olive oil",
       "1 onion, chopped",
       "2 cloves garlic, minced",
-      "Salt and pepper to taste"
+      "Salt and pepper to taste",
+      "Fresh herbs for garnish",
+      isVegetarian || isVegan ? "1 cup vegetable broth" : "1 cup chicken broth",
+      "1/2 teaspoon mixed herbs"
     ],
     instructions: [
       "Prepare all ingredients.",
       "Heat oil in a pan over medium heat.",
-      "Add onions and cook until translucent.",
+      "Add onions and cook until translucent, about 3-5 minutes.",
       "Add garlic and cook for another minute.",
       "Add main ingredients and cook until done.",
-      "Season with salt and pepper."
+      "Season with salt, pepper, and herbs.",
+      "Serve hot and enjoy!"
     ],
     nutritionalInfo: {
-      calories: "320 kcal",
-      protein: "15g",
-      carbs: "25g",
-      fat: "12g"
+      calories: isHealthy ? "250 kcal" : "350 kcal",
+      protein: isMeatDish ? "25g" : "15g",
+      carbs: isHealthy ? "20g" : "30g",
+      fat: isHealthy ? "8g" : "15g"
     },
     tips: [
       "Prepare ingredients in advance for quicker cooking",
-      "This recipe can be stored in the refrigerator for up to 3 days"
+      "This recipe can be stored in the refrigerator for up to 3 days",
+      isVegan ? "Substitute honey with maple syrup to keep it vegan" : 
+               "Add a dollop of sour cream for extra richness"
     ],
     imageSrc: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&h=600&fit=crop"
   };
@@ -80,39 +131,56 @@ export async function POST(request: NextRequest) {
   console.log("API route: Processing recipe generation request");
   
   try {
-    // Parse the request body
-    const body = await request.json();
-    const { userInput } = body;
+    // Parse the request body with error handling
+    let body;
+    let userInput;
     
-    if (!userInput || typeof userInput !== 'string') {
-      console.error("API route: Invalid user input");
+    try {
+      body = await request.json();
+      userInput = body?.userInput;
+    } catch (parseError) {
+      console.error("API route: Failed to parse request body", parseError);
       return NextResponse.json(
-        { error: "Invalid input. Please provide a valid userInput string." },
+        { error: "Invalid request format." },
         { status: 400 }
       );
     }
     
+    if (!userInput || typeof userInput !== 'string' || userInput.trim().length === 0) {
+      console.error("API route: Invalid or empty user input");
+      return NextResponse.json(
+        { error: "Please provide a description of what you'd like to cook." },
+        { status: 400 }
+      );
+    }
+    
+    // Trim and normalize user input
+    userInput = userInput.trim();
     console.log("API route: Received user input:", userInput);
     
-    // Check for API key
+    // Check for environment variables and fallback gracefully
     if (!process.env.GROQ_API_KEY) {
-      console.error("API route: GROQ_API_KEY is not defined");
-      
-      // Use mock recipe as fallback when API key is missing
+      console.warn("API route: GROQ_API_KEY is not defined - using mock recipe");
       const mockRecipe = createMockRecipe(userInput);
-      console.log("API route: Returning mock recipe due to missing API key");
+      const imageUrl = await fetchRecipeImage(mockRecipe.name);
+      mockRecipe.imageSrc = imageUrl;
       return NextResponse.json(mockRecipe);
     }
     
-    // Make API request to Groq
+    // Make API request to Groq with timeout
     console.log("API route: Making Groq API request");
     try {
+      // Set up request timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+      
       const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
         },
+        signal: controller.signal,
         body: JSON.stringify({
           model: "llama-3.1-8b-instant",  // Using a smaller, faster model for reliability
           messages: [
@@ -136,6 +204,7 @@ export async function POST(request: NextRequest) {
                 },
                 "tips": ["tip1", "tip2", ...]
               }
+              Return ONLY valid JSON with no additional text or characters.
               `
             },
             {
@@ -153,7 +222,7 @@ export async function POST(request: NextRequest) {
               Make sure the recipe name is creative and appealing.
               Ensure the tags accurately reflect the recipe's characteristics.
               
-              Return ONLY the JSON with no additional commentary.`
+              Return ONLY valid JSON with the recipe data, with no commentary or decorations.`
             }
           ],
           temperature: 0.7,
@@ -162,51 +231,100 @@ export async function POST(request: NextRequest) {
         }),
       });
       
+      // Clear the timeout
+      clearTimeout(timeoutId);
+      
       if (!response.ok) {
-        const errorText = await response.text();
+        const errorText = await response.text().catch(() => "Could not get error details");
         console.error(`API route: Groq API request failed with status ${response.status}: ${errorText}`);
         throw new Error(`API request failed with status ${response.status}`);
       }
       
-      const data = await response.json();
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error("API route: Failed to parse API response as JSON", jsonError);
+        throw new Error("Invalid response format from API");
+      }
+      
       console.log("API route: Got Groq API response");
       
       if (!data.choices || !data.choices[0]?.message?.content) {
-        console.error("API route: Invalid API response format:", data);
-        throw new Error("Invalid response from Groq API");
+        console.error("API route: Invalid API response format:", JSON.stringify(data).substring(0, 200) + "...");
+        throw new Error("Invalid response structure from Groq API");
       }
       
       try {
-        // Parse the JSON response
+        // Parse the JSON response with extra validations
         const content = data.choices[0].message.content;
         console.log("API route: Parsing content");
         
         let recipeData;
         try {
-          recipeData = JSON.parse(content) as Omit<Recipe, 'imageSrc'>;
+          recipeData = JSON.parse(content.trim()) as Omit<Recipe, 'imageSrc'>;
         } catch (parseError) {
           console.error("API route: JSON parse error:", parseError);
-          // If parsing fails, use a regex to extract JSON
-          const jsonMatch = content.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            recipeData = JSON.parse(jsonMatch[0]) as Omit<Recipe, 'imageSrc'>;
-          } else {
-            throw new Error("Failed to parse response JSON");
+          
+          // Try to clean the content if it's not valid JSON
+          const cleanedContent = content
+            .replace(/^```json/i, '')
+            .replace(/```$/i, '')
+            .trim();
+            
+          try {
+            recipeData = JSON.parse(cleanedContent) as Omit<Recipe, 'imageSrc'>;
+          } catch (secondParseError) {
+            console.error("API route: Second JSON parse error:", secondParseError);
+            // Use regex as last resort
+            const jsonMatch = content.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              try {
+                recipeData = JSON.parse(jsonMatch[0]) as Omit<Recipe, 'imageSrc'>;
+              } catch (thirdParseError) {
+                throw new Error("Could not parse recipe JSON after multiple attempts");
+              }
+            } else {
+              throw new Error("Could not extract JSON from response");
+            }
           }
         }
         
-        // Validate that the recipe has all the required fields
-        if (!recipeData.name || !recipeData.ingredients || !recipeData.instructions) {
-          console.error("API route: Invalid recipe data:", recipeData);
-          throw new Error("Recipe data is missing required fields");
+        // Validate and fill in missing fields if needed
+        if (!recipeData) {
+          throw new Error("No recipe data found in API response");
         }
         
-        // Fetch a recipe image based on the name
-        const imageUrl = await fetchRecipeImage(recipeData.name);
+        // Ensure all required fields exist with sensible defaults
+        const validatedRecipe: Omit<Recipe, 'imageSrc'> = {
+          name: recipeData.name || `Recipe based on ${userInput}`,
+          tags: recipeData.tags || ["Homemade", "Custom"],
+          cookingTime: recipeData.cookingTime || "30 minutes",
+          difficulty: recipeData.difficulty || "Medium",
+          servings: recipeData.servings || 4,
+          ingredients: recipeData.ingredients || ["Ingredients not specified"],
+          instructions: recipeData.instructions || ["Instructions not provided"],
+          nutritionalInfo: recipeData.nutritionalInfo || {
+            calories: "Not available",
+            protein: "Not available",
+            carbs: "Not available",
+            fat: "Not available"
+          },
+          tips: recipeData.tips || ["Customize to your taste"]
+        };
+        
+        // Fetch a recipe image based on the name, with retry logic
+        let imageUrl;
+        try {
+          imageUrl = await fetchRecipeImage(validatedRecipe.name);
+        } catch (imageError) {
+          console.error("API route: Error fetching image, using fallback:", imageError);
+          imageUrl = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&h=600&fit=crop";
+        }
         
         // Return the complete recipe with the image URL
         const completeRecipe: Recipe = {
-          ...recipeData,
+          ...validatedRecipe,
           imageSrc: imageUrl
         };
         
@@ -214,21 +332,68 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(completeRecipe);
       } catch (parseError) {
         console.error("API route: Error parsing recipe data:", parseError);
-        // If we can't parse the response, use a mock recipe
+        // If we can't parse the response, use a mock recipe with the image
         const mockRecipe = createMockRecipe(userInput);
+        const imageUrl = await fetchRecipeImage(mockRecipe.name);
+        mockRecipe.imageSrc = imageUrl;
         return NextResponse.json(mockRecipe);
       }
     } catch (apiError) {
       console.error("API route: Error calling Groq API:", apiError);
+      
+      // Check if it's an abort error (timeout)
+      const isTimeout = apiError instanceof Error && apiError.name === 'AbortError';
+      if (isTimeout) {
+        console.log("API route: Request timed out");
+      }
+      
       // If the API call fails, use a mock recipe
       const mockRecipe = createMockRecipe(userInput);
+      const imageUrl = await fetchRecipeImage(mockRecipe.name);
+      mockRecipe.imageSrc = imageUrl;
+      
       return NextResponse.json(mockRecipe);
     }
   } catch (error) {
     console.error("API route: Unhandled error:", error);
-    return NextResponse.json(
-      { error: "Failed to generate recipe. Please try again." },
-      { status: 500 }
-    );
+    
+    // Create a basic recipe as a last resort
+    try {
+      const emergencyRecipe = {
+        name: "Quick and Easy Recipe",
+        tags: ["Simple", "Quick", "Fallback"],
+        cookingTime: "30 minutes",
+        difficulty: "Easy",
+        servings: 4,
+        ingredients: [
+          "Your favorite ingredients",
+          "Seasonings to taste"
+        ],
+        instructions: [
+          "Combine ingredients according to your preference",
+          "Cook until done to your liking",
+          "Enjoy your creation!"
+        ],
+        nutritionalInfo: {
+          calories: "Varies",
+          protein: "Varies",
+          carbs: "Varies",
+          fat: "Varies"
+        },
+        tips: [
+          "Customize this basic template with your favorite flavors",
+          "Try again with more specific ingredients for a detailed recipe"
+        ],
+        imageSrc: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&h=600&fit=crop"
+      };
+      
+      return NextResponse.json(emergencyRecipe);
+    } catch (finalError) {
+      // Absolute last resort
+      return NextResponse.json(
+        { error: "Failed to generate recipe. Please try again with different ingredients or wording." },
+        { status: 500 }
+      );
+    }
   }
 } 
