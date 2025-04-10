@@ -25,18 +25,36 @@ async function fetchRecipeImage(searchTerm: string): Promise<string> {
     const imageUrl = `https://source.unsplash.com/featured/?food,${sanitizedTerm},recipe`;
     
     // Make a request to get the redirected URL
-    const response = await fetch(imageUrl, { method: 'GET' });
+    // Use a timeout to avoid hanging
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
     
-    if (response.ok) {
-      return response.url;
-    } else {
-      // If API fails, return a random fallback image
-      return fallbackImages[Math.floor(Math.random() * fallbackImages.length)];
+    try {
+      const response = await fetch(imageUrl, { 
+        method: 'GET',
+        signal: controller.signal,
+        // Add cache control headers
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (response.ok) {
+        return response.url;
+      }
+    } catch (fetchError) {
+      console.log("Image fetch timed out or failed:", fetchError);
     }
+    
+    // If API fails, return a random fallback image
+    return fallbackImages[Math.floor(Math.random() * fallbackImages.length)];
   } catch (error) {
     console.error("Error fetching recipe image:", error);
     // Return a placeholder if fetching fails
-    return "https://placehold.co/800x600/orange/white?text=Recipe+Image";
+    return "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&h=600&fit=crop";
   }
 }
 
@@ -84,26 +102,83 @@ export async function generateRecipe(userInput: string): Promise<Recipe> {
   
   try {
     // Use the local API route instead of calling Groq directly
-    // We need to use the origin from environment variables or construct the URL manually for server components
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
+    // For Vercel, we need to ensure we're using the correct base URL
+    const baseUrl = process.env.NEXT_PUBLIC_VERCEL_URL 
+      ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` 
+      : process.env.NEXT_PUBLIC_BASE_URL || 
+        (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
+        
+    const apiUrl = `${baseUrl}/api/generate-recipe`;
     
-    const response = await fetch(`${baseUrl}/api/generate-recipe`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ userInput }),
-    });
+    console.log("Making request to:", apiUrl);
+    
+    // Create a controller for the timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+    
+    try {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+        },
+        body: JSON.stringify({ userInput }),
+        signal: controller.signal,
+        cache: 'no-store',
+      });
+      
+      clearTimeout(timeoutId);
 
-    if (!response.ok) {
-      throw new Error(`API responded with status: ${response.status}`);
+      // Get the response as text first to safely debug
+      const responseText = await response.text();
+      
+      // Check for response validity
+      if (!response.ok) {
+        console.error("API error response:", responseText);
+        throw new Error(`API responded with status: ${response.status}. Details: ${responseText.substring(0, 150)}...`);
+      }
+
+      // Try to parse as JSON
+      try {
+        const recipe = JSON.parse(responseText);
+        
+        // Check if the response contains an error
+        if (recipe.error) {
+          console.error("API returned error:", recipe.error, recipe.details || '');
+          throw new Error(recipe.error);
+        }
+        
+        // If recipe has mockRecipe flag, use the recipe property
+        if (recipe.mockRecipe && recipe.recipe) {
+          console.warn("Mock recipe returned due to API key issues");
+          return recipe.recipe;
+        }
+        
+        // Special handling for mock recipes
+        if (recipe._debug && recipe._debug.emergency) {
+          console.warn("Emergency recipe returned:", recipe._debug);
+        }
+        
+        console.log("Recipe generated successfully:", recipe.name);
+        return recipe;
+      } catch (parseError) {
+        console.error("Failed to parse JSON response:", parseError);
+        throw new Error("Invalid response format from server");
+      }
+    } catch (fetchError) {
+      // Handle abort errors specifically
+      if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+        console.error("Request timed out after 30 seconds");
+        throw new Error("Recipe generation timed out. Please try again.");
+      }
+      throw fetchError;
     }
-
-    const recipe = await response.json();
-    console.log("Recipe generated successfully:", recipe.name);
-    return recipe;
   } catch (error) {
     console.error("Error in generateRecipe:", error);
+    if (error instanceof Error) {
+      throw error;
+    }
     throw new Error("Failed to generate recipe");
   }
 }

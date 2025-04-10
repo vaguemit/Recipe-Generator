@@ -55,18 +55,33 @@ export default function RecipeGenerator() {
       })
 
       const generatedRecipe = await generateRecipe(input)
-      setRecipe(generatedRecipe)
+      
+      // If we got a recipe with a name, consider it successful
+      if (generatedRecipe && generatedRecipe.name) {
+        setRecipe(generatedRecipe)
 
-      // Scroll to recipe after generation
-      setTimeout(() => {
-        const recipeElement = document.getElementById("recipe-result")
-        if (recipeElement) {
-          recipeElement.scrollIntoView({ behavior: "smooth", block: "start" })
-        }
-      }, 100)
+        // Scroll to recipe after generation
+        setTimeout(() => {
+          const recipeElement = document.getElementById("recipe-result")
+          if (recipeElement) {
+            recipeElement.scrollIntoView({ behavior: "smooth", block: "start" })
+          }
+        }, 100)
+      } else {
+        throw new Error("Generated recipe is incomplete or invalid")
+      }
     } catch (err) {
       console.error("Error generating recipe:", err)
-      setError("Failed to generate recipe. Please try again.")
+      
+      let errorMessage = "Failed to generate recipe. Please try again."
+      
+      // Extract error message if available
+      if (err instanceof Error) {
+        errorMessage = err.message || errorMessage
+      }
+      
+      setError(errorMessage)
+      
       toast({
         title: "Error generating recipe",
         description: "Please try again with different ingredients or preferences.",
@@ -218,15 +233,30 @@ export default function RecipeGenerator() {
                   <p className="text-sm text-red-700 mt-1">
                     Our recipe AI encountered an issue. Please try again or use a different query.
                   </p>
+                  {retryCount > 2 && (
+                    <p className="text-sm text-red-700 mt-2 p-2 bg-red-100 rounded">
+                      Multiple attempts failed. Try a simpler query or check if your request contains unusual ingredients or complex requirements.
+                    </p>
+                  )}
                 </div>
               </div>
-              <Button 
-                onClick={handleRetry} 
-                className="bg-red-600 hover:bg-red-700"
-                disabled={isGenerating}
-              >
-                Try Again
-              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  onClick={handleRetry} 
+                  className="bg-red-600 hover:bg-red-700"
+                  disabled={isGenerating}
+                >
+                  Try Again
+                </Button>
+                <Button 
+                  onClick={() => setInput('')} 
+                  variant="outline"
+                  className="border-red-200 hover:bg-red-100 text-red-700"
+                  disabled={isGenerating}
+                >
+                  Clear Input
+                </Button>
+              </div>
             </div>
           )}
 

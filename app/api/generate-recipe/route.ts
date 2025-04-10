@@ -1,6 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Recipe, recipeSchema } from "@/lib/types";
 
+// Configure headers for Vercel deployment
+export const config = {
+  runtime: 'edge', // Use Edge runtime for better performance
+};
+
+// Helper function to create a response with proper headers
+function createResponse(data: any, status = 200) {
+  return new NextResponse(JSON.stringify(data), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+    },
+  });
+}
+
 // Improved function to fetch a recipe image from Unsplash API with better error handling
 async function fetchRecipeImage(searchTerm: string): Promise<string> {
   try {
@@ -129,7 +148,13 @@ function createMockRecipe(userInput: string): Recipe {
 
 export async function POST(request: NextRequest) {
   console.log("API route: Processing recipe generation request");
+  console.log("Environment: ", process.env.NODE_ENV || "development", "Platform:", process.env.VERCEL ? "Vercel" : "Other");
   
+  // Handle CORS preflight requests
+  if (request.method === 'OPTIONS') {
+    return createResponse({ success: true });
+  }
+
   try {
     // Parse the request body with error handling
     let body;
@@ -138,19 +163,24 @@ export async function POST(request: NextRequest) {
     try {
       body = await request.json();
       userInput = body?.userInput;
-    } catch (parseError) {
+    } catch (parseError: unknown) {
       console.error("API route: Failed to parse request body", parseError);
-      return NextResponse.json(
-        { error: "Invalid request format." },
-        { status: 400 }
+      return createResponse(
+        { 
+          error: "Invalid request format.", 
+          details: process.env.NODE_ENV === "development" ? 
+            (parseError instanceof Error ? parseError.message : String(parseError)) : 
+            undefined 
+        },
+        400
       );
     }
     
     if (!userInput || typeof userInput !== 'string' || userInput.trim().length === 0) {
       console.error("API route: Invalid or empty user input");
-      return NextResponse.json(
+      return createResponse(
         { error: "Please provide a description of what you'd like to cook." },
-        { status: 400 }
+        400
       );
     }
     
@@ -161,11 +191,19 @@ export async function POST(request: NextRequest) {
     // Check for environment variables and fallback gracefully
     if (!process.env.GROQ_API_KEY) {
       console.warn("API route: GROQ_API_KEY is not defined - using mock recipe");
-      const mockRecipe = createMockRecipe(userInput);
-      const imageUrl = await fetchRecipeImage(mockRecipe.name);
-      mockRecipe.imageSrc = imageUrl;
-      return NextResponse.json(mockRecipe);
+      return createResponse(
+        { 
+          error: "API Key not configured in production",
+          details: "The API key is missing. Check your environment variables.", 
+          mockRecipe: true,
+          recipe: createMockRecipe(userInput)
+        },
+        200
+      );
     }
+    
+    // Log API key status (safely)
+    console.log("API route: GROQ_API_KEY status", process.env.GROQ_API_KEY ? "Present (first 4 chars: " + process.env.GROQ_API_KEY.substring(0, 4) + "...)" : "Missing");
     
     // Make API request to Groq with timeout
     console.log("API route: Making Groq API request");
@@ -329,14 +367,14 @@ export async function POST(request: NextRequest) {
         };
         
         console.log("API route: Successfully generated recipe:", completeRecipe.name);
-        return NextResponse.json(completeRecipe);
+        return createResponse(completeRecipe);
       } catch (parseError) {
         console.error("API route: Error parsing recipe data:", parseError);
         // If we can't parse the response, use a mock recipe with the image
         const mockRecipe = createMockRecipe(userInput);
         const imageUrl = await fetchRecipeImage(mockRecipe.name);
         mockRecipe.imageSrc = imageUrl;
-        return NextResponse.json(mockRecipe);
+        return createResponse(mockRecipe);
       }
     } catch (apiError) {
       console.error("API route: Error calling Groq API:", apiError);
@@ -352,9 +390,9 @@ export async function POST(request: NextRequest) {
       const imageUrl = await fetchRecipeImage(mockRecipe.name);
       mockRecipe.imageSrc = imageUrl;
       
-      return NextResponse.json(mockRecipe);
+      return createResponse(mockRecipe);
     }
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("API route: Unhandled error:", error);
     
     // Create a basic recipe as a last resort
@@ -387,12 +425,30 @@ export async function POST(request: NextRequest) {
         imageSrc: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&h=600&fit=crop"
       };
       
-      return NextResponse.json(emergencyRecipe);
+      console.log("API route: Returning emergency recipe");
+      return createResponse({
+        ...emergencyRecipe,
+        _debug: {
+          error: process.env.NODE_ENV === "development" ? 
+            (error instanceof Error ? error.message : String(error)) : 
+            "An error occurred",
+          environment: process.env.NODE_ENV,
+          apiKeyPresent: !!process.env.GROQ_API_KEY,
+          emergency: true
+        }
+      });
     } catch (finalError) {
       // Absolute last resort
-      return NextResponse.json(
-        { error: "Failed to generate recipe. Please try again with different ingredients or wording." },
-        { status: 500 }
+      console.error("API route: Even emergency recipe failed:", finalError);
+      return createResponse(
+        { 
+          error: "Failed to generate recipe. Please try again with different ingredients or wording.",
+          environment: process.env.NODE_ENV,
+          details: process.env.NODE_ENV === "development" ? 
+            (error instanceof Error ? error.message : String(error)) : 
+            undefined
+        },
+        500
       );
     }
   }
