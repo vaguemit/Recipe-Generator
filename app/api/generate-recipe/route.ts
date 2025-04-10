@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Recipe, recipeSchema } from "@/lib/types";
 
-// Configure headers for Vercel deployment
-export const config = {
-  runtime: 'edge', // Use Edge runtime for better performance
-};
+// Remove edge runtime configuration
+// export const config = {
+//   runtime: 'edge', // Use Edge runtime for better performance
+// };
 
 // Helper function to create a response with proper headers
 function createResponse(data: any, status = 200) {
-  return new NextResponse(JSON.stringify(data), {
+  return NextResponse.json(data, {
     status,
     headers: {
-      'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
