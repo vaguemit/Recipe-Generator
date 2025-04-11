@@ -101,23 +101,31 @@ export async function generateRecipe(userInput: string): Promise<Recipe> {
   console.log("Generating recipe for:", userInput);
   
   try {
-    // For Vercel deployments, use the Groq API directly instead of going through our API
-    if (process.env.NEXT_PUBLIC_VERCEL_URL || process.env.VERCEL) {
+    // Detect if we're in production (Vercel) environment
+    const isVercelEnvironment = process.env.NEXT_PUBLIC_VERCEL_URL || process.env.VERCEL || process.env.NODE_ENV === 'production';
+    
+    if (isVercelEnvironment) {
       // Make direct call to Groq instead of going through our API which requires auth
       console.log("Using direct Groq API call for Vercel deployment");
       
       // Check if we have the API key
       if (!process.env.GROQ_API_KEY) {
-        console.error("GROQ_API_KEY is not defined");
+        console.error("GROQ_API_KEY is not defined in environment variables");
         return createLocalMockRecipe(userInput);
       }
       
       try {
+        const apiKey = process.env.GROQ_API_KEY.trim();
+        if (!apiKey) {
+          throw new Error("GROQ_API_KEY is empty");
+        }
+        
+        console.log("Making request to Groq API");
         const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
+            "Authorization": `Bearer ${apiKey}`,
           },
           body: JSON.stringify({
             model: "llama-3.1-8b-instant",
@@ -138,27 +146,77 @@ export async function generateRecipe(userInput: string): Promise<Recipe> {
         });
         
         if (!response.ok) {
-          throw new Error(`API request failed with status ${response.status}`);
+          const errorStatus = response.status;
+          let errorText = "";
+          try {
+            const errorData = await response.text();
+            errorText = errorData;
+          } catch (e) {
+            // Ignore if we can't parse error text
+          }
+          
+          console.error(`API request failed with status ${errorStatus}: ${errorText}`);
+          throw new Error(`API request failed with status ${errorStatus}`);
         }
         
-        const data = await response.json();
+        // Get response as text first for safer parsing
+        const responseText = await response.text();
+        
+        if (!responseText || responseText.trim() === "") {
+          throw new Error("Empty response from API");
+        }
+        
+        // Try to parse the JSON
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch (parseError) {
+          console.error("Failed to parse API response as JSON:", parseError);
+          throw new Error("Invalid JSON response from API");
+        }
         
         if (!data.choices || !data.choices[0]?.message?.content) {
-          throw new Error("Invalid API response");
+          console.error("Malformed API response:", data);
+          throw new Error("Invalid API response structure");
         }
         
         // Parse the JSON response
         const content = data.choices[0].message.content;
-        const recipeData = JSON.parse(content);
+        let recipeData;
         
-        // Add default image
+        try {
+          recipeData = JSON.parse(content);
+        } catch (parseError) {
+          console.error("Failed to parse recipe data:", parseError);
+          throw new Error("Invalid recipe format");
+        }
+        
+        if (!recipeData.name || !recipeData.ingredients || !recipeData.instructions) {
+          console.error("Incomplete recipe data:", recipeData);
+          throw new Error("Recipe data is incomplete");
+        }
+        
+        // Fetch a recipe image based on the name
+        let imageSrc;
+        try {
+          imageSrc = await fetchRecipeImage(recipeData.name);
+        } catch (imageError) {
+          console.error("Error fetching image:", imageError);
+          // Use default image if fetch fails
+          imageSrc = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&h=600&fit=crop";
+        }
+        
+        // Return complete recipe
         return {
           ...recipeData,
-          imageSrc: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&h=600&fit=crop"
+          imageSrc
         };
       } catch (error) {
         console.error("Error in direct Groq API call:", error);
-        return createLocalMockRecipe(userInput);
+        // Return mock recipe but include the error to help debugging
+        const mockRecipe = createLocalMockRecipe(userInput);
+        console.log("Returning mock recipe due to API error");
+        return mockRecipe;
       }
     }
     
@@ -166,7 +224,7 @@ export async function generateRecipe(userInput: string): Promise<Recipe> {
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
     const apiUrl = `${baseUrl}/api/generate-recipe`;
     
-    console.log("Making request to:", apiUrl);
+    console.log("Making request to local API:", apiUrl);
     
     const response = await fetch(apiUrl, {
       method: 'POST',

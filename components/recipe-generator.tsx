@@ -229,7 +229,7 @@ export default function RecipeGenerator() {
                   <Info className="h-5 w-5 text-red-600" />
                 </div>
                 <div>
-                  <h3 className="font-medium text-red-800">{error}</h3>
+                  <h3 className="font-medium text-red-800">An unexpected response was received from the server.</h3>
                   <p className="text-sm text-red-700 mt-1">
                     Our recipe AI encountered an issue. Please try again or use a different query.
                   </p>
@@ -240,21 +240,21 @@ export default function RecipeGenerator() {
                   )}
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex justify-end">
                 <Button 
-                  onClick={handleRetry} 
-                  className="bg-red-600 hover:bg-red-700"
+                  variant="outline" 
+                  onClick={handleRetry}
                   disabled={isGenerating}
+                  className="border-red-200 text-red-700 hover:bg-red-100"
                 >
-                  Try Again
-                </Button>
-                <Button 
-                  onClick={() => setInput('')} 
-                  variant="outline"
-                  className="border-red-200 hover:bg-red-100 text-red-700"
-                  disabled={isGenerating}
-                >
-                  Clear Input
+                  {isGenerating ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Retrying...
+                    </>
+                  ) : (
+                    "Try Again"
+                  )}
                 </Button>
               </div>
             </div>

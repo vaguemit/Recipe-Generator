@@ -60,7 +60,8 @@ export async function POST(request: NextRequest) {
     const cleanedInput = userInput.trim();
     
     // Check for API key
-    if (!process.env.GROQ_API_KEY) {
+    if (!process.env.GROQ_API_KEY || process.env.GROQ_API_KEY.trim() === '') {
+      console.error("GROQ_API_KEY is missing or empty");
       // Return mock recipe if API key is missing
       const mockRecipe = createMockRecipe(cleanedInput);
       return NextResponse.json(mockRecipe);
@@ -68,11 +69,12 @@ export async function POST(request: NextRequest) {
     
     try {
       // Make API request to Groq
+      console.log("API route: Making request to Groq API");
       const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
+          "Authorization": `Bearer ${process.env.GROQ_API_KEY.trim()}`,
         },
         body: JSON.stringify({
           model: "llama-3.1-8b-instant",
@@ -93,18 +95,48 @@ export async function POST(request: NextRequest) {
       });
       
       if (!response.ok) {
+        console.error(`API request failed with status ${response.status}`);
         throw new Error(`API request failed with status ${response.status}`);
       }
       
-      const data = await response.json();
+      // Get response as text first for safer parsing
+      const responseText = await response.text();
+      
+      if (!responseText || responseText.trim() === "") {
+        console.error("Empty response from Groq API");
+        throw new Error("Empty response from API");
+      }
+      
+      // Try to parse the JSON
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error("Failed to parse API response as JSON", parseError);
+        throw new Error("Invalid JSON response from API");
+      }
       
       if (!data.choices || !data.choices[0]?.message?.content) {
-        throw new Error("Invalid API response");
+        console.error("Malformed API response:", data);
+        throw new Error("Invalid API response structure");
       }
       
       // Parse the JSON response
       const content = data.choices[0].message.content;
-      const recipeData = JSON.parse(content);
+      let recipeData;
+      
+      try {
+        recipeData = JSON.parse(content);
+      } catch (parseError) {
+        console.error("Failed to parse recipe data:", parseError);
+        throw new Error("Invalid recipe format");
+      }
+      
+      // Validate recipe has required fields
+      if (!recipeData.name || !recipeData.ingredients || !recipeData.instructions) {
+        console.error("Incomplete recipe data:", recipeData);
+        throw new Error("Recipe data is incomplete");
+      }
       
       // Return the complete recipe with a default image URL
       const completeRecipe: Recipe = {
@@ -114,11 +146,13 @@ export async function POST(request: NextRequest) {
       
       return NextResponse.json(completeRecipe);
     } catch (error) {
+      console.error("Error in API call:", error);
       // If the API call fails, use a mock recipe
       const mockRecipe = createMockRecipe(cleanedInput);
       return NextResponse.json(mockRecipe);
     }
   } catch (error) {
+    console.error("Unexpected error in API route:", error);
     // Final fallback for any other errors
     return NextResponse.json(
       { 
