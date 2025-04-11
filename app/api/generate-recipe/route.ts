@@ -4,6 +4,60 @@ import { Recipe } from "@/lib/types";
 // Fallback image when everything else fails
 const DEFAULT_IMAGE = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&h=600&fit=crop";
 
+// Validate and format recipe data to match our schema
+function validateAndFormatRecipe(data: any): Recipe {
+  try {
+    // Basic validation
+    if (!data || typeof data !== 'object') {
+      throw new Error('Invalid recipe data: not an object');
+    }
+    
+    // Ensure required fields exist
+    const requiredFields = ['name', 'ingredients', 'instructions'];
+    for (const field of requiredFields) {
+      if (!data[field]) {
+        throw new Error(`Invalid recipe data: missing ${field}`);
+      }
+    }
+    
+    // Format the recipe according to our schema
+    const recipe: Recipe = {
+      name: String(data.name || ''),
+      tags: Array.isArray(data.tags) ? data.tags.map(String) : ['General'],
+      cookingTime: typeof data.cookingTime === 'string' ? data.cookingTime : '30 minutes',
+      difficulty: typeof data.difficulty === 'string' ? data.difficulty : 'Medium',
+      servings: typeof data.servings === 'number' ? data.servings : 4,
+      ingredients: Array.isArray(data.ingredients) 
+        ? data.ingredients.map(String) 
+        : ['Ingredients not specified'],
+      instructions: Array.isArray(data.instructions) 
+        ? data.instructions.map(String) 
+        : ['Instructions not specified'],
+      nutritionalInfo: {
+        calories: typeof data.nutritionalInfo?.calories === 'string' 
+          ? data.nutritionalInfo.calories 
+          : 'Not specified',
+        protein: typeof data.nutritionalInfo?.protein === 'string' 
+          ? data.nutritionalInfo.protein 
+          : 'Not specified',
+        carbs: typeof data.nutritionalInfo?.carbs === 'string' 
+          ? data.nutritionalInfo.carbs 
+          : 'Not specified',
+        fat: typeof data.nutritionalInfo?.fat === 'string' 
+          ? data.nutritionalInfo.fat 
+          : 'Not specified',
+      },
+      tips: Array.isArray(data.tips) ? data.tips.map(String) : [],
+      imageSrc: typeof data.imageSrc === 'string' ? data.imageSrc : undefined
+    };
+    
+    return recipe;
+  } catch (error) {
+    console.error('Recipe validation error:', error);
+    throw new Error('Failed to validate recipe data');
+  }
+}
+
 // Simplified fallback recipe generator
 function createMockRecipe(userInput: string): Recipe {
   const recipeName = `${userInput.charAt(0).toUpperCase() + userInput.slice(1).split(' ').slice(0, 3).join(' ')} Recipe`;
@@ -81,11 +135,11 @@ export async function POST(request: NextRequest) {
           messages: [
             {
               role: "system",
-              content: "You are a professional chef's assistant. Generate a detailed recipe based on user input in JSON format with name, tags, cookingTime, difficulty, servings, ingredients, instructions, nutritionalInfo (calories, protein, carbs, fat), and tips fields."
+              content: "You are a professional chef's assistant. Generate a recipe in valid JSON format with the following structure exactly: {\"name\": string, \"tags\": string[], \"cookingTime\": string, \"difficulty\": string, \"servings\": number, \"ingredients\": string[], \"instructions\": string[], \"nutritionalInfo\": {\"calories\": string, \"protein\": string, \"carbs\": string, \"fat\": string}, \"tips\": string[]}. Do not include nested objects in arrays. Ensure all values have proper types and formatting."
             },
             {
               role: "user",
-              content: `Generate a detailed recipe based on the following: "${cleanedInput}". Include specific ingredients, dietary preferences, and cuisine type if mentioned.`
+              content: `Generate a recipe for: "${cleanedInput}". Be sure to follow the exact JSON format specified.`
             }
           ],
           temperature: 0.7,
@@ -132,10 +186,12 @@ export async function POST(request: NextRequest) {
         throw new Error("Invalid recipe format");
       }
       
-      // Validate recipe has required fields
-      if (!recipeData.name || !recipeData.ingredients || !recipeData.instructions) {
-        console.error("Incomplete recipe data:", recipeData);
-        throw new Error("Recipe data is incomplete");
+      // Validate and format recipe data
+      try {
+        recipeData = validateAndFormatRecipe(recipeData);
+      } catch (validationError) {
+        console.error("Recipe validation error:", validationError);
+        throw new Error("Failed to validate recipe data");
       }
       
       // Return the complete recipe with a default image URL
