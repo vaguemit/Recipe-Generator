@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Recipe } from "@/lib/types";
+import { fetchRecipeImage } from "@/lib/recipe-actions";
 
 // Fallback image when everything else fails
 const DEFAULT_IMAGE = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&h=600&fit=crop";
@@ -194,10 +195,19 @@ export async function POST(request: NextRequest) {
         throw new Error("Failed to validate recipe data");
       }
       
-      // Return the complete recipe with a default image URL
+      // Try to fetch a better image for the recipe
+      let imageSrc = DEFAULT_IMAGE;
+      try {
+        imageSrc = await fetchRecipeImage(recipeData.name);
+      } catch (imageError) {
+        console.error("Error fetching image:", imageError);
+        // Keep using the default image
+      }
+      
+      // Return the complete recipe with the image URL
       const completeRecipe: Recipe = {
         ...recipeData,
-        imageSrc: DEFAULT_IMAGE
+        imageSrc
       };
       
       return NextResponse.json(completeRecipe);

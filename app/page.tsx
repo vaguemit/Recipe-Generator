@@ -144,6 +144,7 @@ export default function Home() {
           </div>
           <div className="mt-8 pt-8 border-t border-amber-700 text-center text-amber-100">
             <p>© 2025 Recipe Wizard. All rights reserved.</p>
+            <p className="mt-2 text-amber-200">Made by Dirgh, Devarsh, Gyan, Mustafa</p>
           </div>
         </div>
       </footer>

@@ -3,53 +3,134 @@
 import { Recipe, recipeSchema } from "./types"
 
 // Fetch a real image from Unsplash API based on search term
-async function fetchRecipeImage(searchTerm: string): Promise<string> {
+export async function fetchRecipeImage(searchTerm: string): Promise<string> {
   try {
-    // Default fallback images from Unsplash in case the API fails
+    // Default fallback images from Unsplash - high quality, diverse food images
     const fallbackImages = [
-      "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&h=600&fit=crop",
-      "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=800&h=600&fit=crop",
-      "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?w=800&h=600&fit=crop",
-      "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=800&h=600&fit=crop",
-      "https://images.unsplash.com/photo-1565958011703-44f9829ba187?w=800&h=600&fit=crop",
-      "https://images.unsplash.com/photo-1482049016688-2d3e1b311543?w=800&h=600&fit=crop",
-      "https://images.unsplash.com/photo-1484723091739-30a097e8f929?w=800&h=600&fit=crop",
-      "https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=800&h=600&fit=crop",
-      "https://images.unsplash.com/photo-1485921325833-c519f76c4927?w=800&h=600&fit=crop",
-      "https://images.unsplash.com/photo-1473093295043-cdd812d0e601?w=800&h=600&fit=crop"
+      "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&h=600&fit=crop", // Colorful food spread
+      "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=800&h=600&fit=crop", // Pasta dish
+      "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?w=800&h=600&fit=crop", // Vegetable salad
+      "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=800&h=600&fit=crop", // Pizza
+      "https://images.unsplash.com/photo-1565958011703-44f9829ba187?w=800&h=600&fit=crop", // Salmon dish
+      "https://images.unsplash.com/photo-1482049016688-2d3e1b311543?w=800&h=600&fit=crop", // Breakfast
+      "https://images.unsplash.com/photo-1484723091739-30a097e8f929?w=800&h=600&fit=crop", // Dessert
+      "https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=800&h=600&fit=crop", // BBQ/grilled food
+      "https://images.unsplash.com/photo-1485921325833-c519f76c4927?w=800&h=600&fit=crop", // Sandwiches
+      "https://images.unsplash.com/photo-1473093295043-cdd812d0e601?w=800&h=600&fit=crop", // Soup
+      "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=800&h=600&fit=crop", // Healthy bowl
+      "https://images.unsplash.com/photo-1455619452474-d2be8b1e70cd?w=800&h=600&fit=crop", // Cupcakes
+      "https://images.unsplash.com/photo-1551782450-17144efb9c50?w=800&h=600&fit=crop", // Burger
+      "https://images.unsplash.com/photo-1532980400857-e8d9d275d858?w=800&h=600&fit=crop"  // Curry
     ];
     
-    // Use Unsplash Source API (no API key required for basic usage)
-    // Format: https://source.unsplash.com/featured/?[search-term]
-    const sanitizedTerm = searchTerm.toLowerCase().replace(/[^a-z0-9]/g, ',');
-    const imageUrl = `https://source.unsplash.com/featured/?food,${sanitizedTerm},recipe`;
-    
-    // Make a request to get the redirected URL
-    // Use a timeout to avoid hanging
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    
-    try {
-      const response = await fetch(imageUrl, { 
-        method: 'GET',
-        signal: controller.signal,
-        // Add cache control headers
-        headers: {
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
-        }
-      });
+    // Extract relevant keywords from the search term
+    const extractKeywords = (term: string): string[] => {
+      // Common food categories and cuisines for better image matching
+      const foodCategories = [
+        'pasta', 'pizza', 'salad', 'soup', 'stew', 'curry', 'burger', 'sandwich',
+        'breakfast', 'dessert', 'cake', 'cookie', 'fish', 'seafood', 'chicken',
+        'beef', 'pork', 'lamb', 'vegan', 'vegetarian', 'rice', 'noodle', 'bread',
+        'grill', 'roast', 'bake', 'mexican', 'italian', 'indian', 'thai', 'french',
+        'chinese', 'japanese', 'mediterranean'
+      ];
       
-      clearTimeout(timeoutId);
+      const words = term.toLowerCase().split(/\s+/);
+      const keywords = words.filter(word => 
+        word.length > 2 && 
+        !['with', 'and', 'the', 'for', 'from', 'recipe'].includes(word)
+      );
       
-      if (response.ok) {
-        return response.url;
-      }
-    } catch (fetchError) {
-      console.log("Image fetch timed out or failed:", fetchError);
+      // Check if any food categories are in the search term
+      const foundCategories = foodCategories.filter(category => 
+        term.toLowerCase().includes(category)
+      );
+      
+      return [...keywords, ...foundCategories].slice(0, 3);
+    };
+    
+    const keywords = extractKeywords(searchTerm);
+    
+    // If we couldn't extract meaningful keywords, use a random fallback
+    if (keywords.length === 0) {
+      return fallbackImages[Math.floor(Math.random() * fallbackImages.length)];
     }
     
-    // If API fails, return a random fallback image
+    // Create a search query with extracted keywords
+    const searchQuery = `food,${keywords.join(',')},cooking,recipe`;
+    const sanitizedQuery = searchQuery.replace(/[^a-z0-9,]/g, '');
+    
+    // Use Unsplash Source API with better parameters
+    const imageUrl = `https://source.unsplash.com/featured/?${sanitizedQuery}&fit=crop&w=800&h=600&q=80`;
+    
+    // Try multiple attempts for better results
+    const maxAttempts = 2;
+    let lastUrl = '';
+    
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      // Make a request with timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      
+      try {
+        const response = await fetch(`${imageUrl}&attempt=${attempt}`, { 
+          method: 'GET',
+          signal: controller.signal,
+          headers: {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          }
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (response.ok) {
+          const url = response.url;
+          
+          // Skip if we got the same URL twice (Unsplash sometimes returns the same image)
+          if (url !== lastUrl || attempt === maxAttempts - 1) {
+            return url;
+          }
+          
+          lastUrl = url;
+        }
+      } catch (fetchError) {
+        console.log(`Image fetch attempt ${attempt + 1} failed:`, fetchError);
+      }
+    }
+    
+    // If all attempts fail, return a category-specific fallback image if possible
+    const getCategoryFallback = (term: string): string | null => {
+      const categories = [
+        { keywords: ['pasta', 'italian', 'noodle'], index: 1 },
+        { keywords: ['salad', 'vegetable', 'vegetarian', 'vegan'], index: 2 },
+        { keywords: ['pizza'], index: 3 },
+        { keywords: ['fish', 'salmon', 'seafood'], index: 4 },
+        { keywords: ['breakfast', 'brunch', 'morning'], index: 5 },
+        { keywords: ['cake', 'dessert', 'cookie', 'sweet'], index: 6 },
+        { keywords: ['grill', 'bbq', 'barbecue'], index: 7 },
+        { keywords: ['sandwich', 'bread', 'toast'], index: 8 },
+        { keywords: ['soup', 'stew'], index: 9 },
+        { keywords: ['healthy', 'bowl'], index: 10 },
+        { keywords: ['cupcake', 'muffin'], index: 11 },
+        { keywords: ['burger'], index: 12 },
+        { keywords: ['curry', 'indian', 'thai'], index: 13 }
+      ];
+      
+      for (const category of categories) {
+        if (category.keywords.some(word => term.toLowerCase().includes(word))) {
+          return fallbackImages[category.index];
+        }
+      }
+      
+      return null;
+    };
+    
+    const categoryFallback = getCategoryFallback(searchTerm);
+    if (categoryFallback) {
+      return categoryFallback;
+    }
+    
+    // Last resort - return a random fallback image
     return fallbackImages[Math.floor(Math.random() * fallbackImages.length)];
   } catch (error) {
     console.error("Error fetching recipe image:", error);
